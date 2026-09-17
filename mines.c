@@ -4294,6 +4294,52 @@ static char *mines_move_cursor(const struct game_drawstate *ds, int button, int 
     return MOVE_UI_UPDATE;
 }
 
+/*
+ * Right-click (or its keyboard equivalent) on a numbered tile: the dual of the
+ * left-click/middle-click chord at the end of interpret_move(). If the number
+ * of covered neighbours (flagged or not) equals the tile's mine count, every
+ * one of those covered neighbours must be a mine, so flag whichever of them
+ * aren't already flagged.
+ */
+static char *flag_chord_move(const game_state *from, const game_drawstate *ds,
+                             int ctile)
+{
+    int j, ni, n;
+    char buf[256];
+    char *p = buf;
+    const char *sep = "";
+
+    if (from->board[ctile] <= 0)
+        return NULL;
+
+    n = 0;
+    for (j = 0; j < ds->grid->nsize; j++) {
+        ni = ds->grid->neighbours[ctile*ds->grid->nsize + j];
+        if (ni >= 0 &&
+            (from->board[ni] == -1 || from->board[ni] == -2))
+            n++;
+    }
+
+    if (n != from->board[ctile])
+        return NULL;
+
+    for (j = 0; j < ds->grid->nsize; j++) {
+        ni = ds->grid->neighbours[ctile*ds->grid->nsize + j];
+        if (ni >= 0 && from->board[ni] == -2) {
+            if (ds->grid->type == MINES_GRID_SQUARE)
+                p += sprintf(p, "%sF%d,%d", sep, ni%ds->w, ni/ds->w);
+            else
+                p += sprintf(p, "%sF%d", sep, ni);
+            sep = ";";
+        }
+    }
+
+    if (p == buf)
+        return NULL;                  /* nothing left to flag */
+
+    return dupstr(buf);
+}
+
 static char *interpret_move(const game_state *from, game_ui *ui,
                             const game_drawstate *ds,
                             int x, int y, int button)
@@ -4316,7 +4362,12 @@ static char *interpret_move(const game_state *from, game_ui *ui,
             return MOVE_UI_UPDATE;
         }
         if (button == CURSOR_SELECT2) {
-            /* As for RIGHT_BUTTON; only works on covered square. */
+            /* As for RIGHT_BUTTON; toggles a covered square,
+             * and triggers a flag-chord on an opened numbered tile. */
+            if (v > 0) {
+                char *chord = flag_chord_move(from, ds, ui->cur_tile);
+                return chord ? chord : MOVE_NO_EFFECT;
+            }
             if (v != -2 && v != -1)
                 return MOVE_NO_EFFECT;
             if (ds->grid->type == MINES_GRID_SQUARE)
@@ -4376,9 +4427,18 @@ static char *interpret_move(const game_state *from, game_ui *ui,
         }
 
 	/*
-	 * Right-clicking only works on a covered square, and it
-	 * toggles between -1 (marked as mine) and -2 (not marked
-	 * as mine).
+	 * Right-clicking on an opened numbered tile triggers a
+	 * flag-chord: the dual of the left/middle-click open-chord.
+	 */
+	if (from->board[ctile] > 0) {
+	    char *move = flag_chord_move(from, ds, ctile);
+	    return move ? move : MOVE_NO_EFFECT;
+	}
+
+	/*
+	 * Right-clicking otherwise only works on a covered square,
+	 * and it toggles between -1 (marked as mine) and -2 (not
+	 * marked as mine).
 	 *
 	 * FIXME: question marks.
 	 */
