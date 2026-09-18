@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Puzzles (WASM midend)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    color-scheme: light dark;
+    /* Tailwind's slate scale: https://tailwindcss.com/docs/colors */
+    --fg: #0f172a; /* slate-900 */
+    --bg: #f8fafc; /* slate-50 */
+    --panel: #f1f5f9; /* slate-100 */
+    --border: #e2e8f0; /* slate-200 */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #f1f5f9; /* slate-100 */
+      --bg: #0f172a; /* slate-900 */
+      --panel: #1e293b; /* slate-800 */
+      --border: #334155; /* slate-700 */
+    }
+  }
+  html, body {
+    height: 100%;
+    margin: 0;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 0.5em 1em;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 {
+    font-size: 1.1em;
+    margin: 0;
+  }
+  #puzzle {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .puzzle-midend-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em;
+    padding: 0.5em;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .puzzle-midend-canvas-wrap {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+    overflow: hidden;
+  }
+  .puzzle-midend-canvas-wrap canvas {
+    outline: none;
+    /* wasmmid_default_colour reads this via getComputedStyle to pick
+       the puzzle's background colour, so it must be opaque - an
+       unset (transparent) background reads back as black. */
+    background: var(--bg);
+  }
+  .puzzle-midend-statusbar {
+    padding: 0.25em 0.5em;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    font-family: monospace;
+  }
+  .puzzle-midend-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .puzzle-midend-dialog {
+    background: var(--panel);
+    color: var(--fg);
+    border-radius: 6px;
+    padding: 1em;
+    min-width: 20em;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  }
+  .puzzle-midend-dialog h3 {
+    margin-top: 0;
+  }
+  .puzzle-midend-dialog-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1em;
+    margin: 0.5em 0;
+  }
+  .puzzle-midend-dialog-error {
+    color: #c0392b;
+    min-height: 1.2em;
+  }
+  .puzzle-midend-dialog-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5em;
+    margin-top: 1em;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Simon Tatham's Puzzles &mdash; WASM midend demo</h1>
+</header>
+<div id="puzzle">Loading&hellip;</div>
+
+<script type="module">
+  import { mountPuzzle } from "./puzzle-midend.js";
+
+  const params = new URLSearchParams(location.search);
+  const wasmUrl = params.get("wasm") || "puzzles-midend.wasm";
+  const gameIndex = params.has("game") ? Number(params.get("game")) : undefined;
+
+  mountPuzzle(document.getElementById("puzzle"), wasmUrl, { gameIndex }).catch((err) => {
+    document.getElementById("puzzle").textContent =
+      `Couldn't load ${wasmUrl}: ${err.message}. ` +
+      "See web/README.md for how to build it and where to put it.";
+    console.error(err);
+  });
+</script>
+</body>
+</html>

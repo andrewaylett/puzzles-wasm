@@ -155,3 +155,5 @@ include/
 /unfinished/sokoban
 /unfinished/*.exe
 /*.desktop
+.DS_Store
+*.local.toml

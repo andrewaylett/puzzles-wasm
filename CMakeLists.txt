@@ -6,11 +6,13 @@ project(puzzles
 set(PUZZLES_ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}")
 include(cmake/setup.cmake)
 
-add_library(core_obj OBJECT
+set(midend_core_sources
   combi.c divvy.c draw-poly.c drawing.c dsf.c findloop.c grid.c
   latin.c laydomino.c loopgen.c malloc.c matching.c midend.c misc.c
   penrose.c penrose-legacy.c ps.c random.c sort.c tdq.c tree234.c
-  version.c
+  version.c)
+add_library(core_obj OBJECT
+  ${midend_core_sources}
   ${platform_common_sources})
 add_library(core STATIC $<TARGET_OBJECTS:core_obj>)
 add_library(common STATIC $<TARGET_OBJECTS:core_obj> hat.c spectre.c)
@@ -275,8 +277,9 @@ guiprogram(grapheditor untangle.c
 add_subdirectory(unfinished)
 add_subdirectory(auxiliary)
 
+write_generated_games_header()
+
 if(build_cli_programs)
-  write_generated_games_header()
   include(CheckFunctionExists)
   check_function_exists(HF_ITER HAVE_HF_ITER)
   set(WITH_LIBFUZZER OFF

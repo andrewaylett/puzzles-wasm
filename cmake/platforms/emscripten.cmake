@@ -6,6 +6,11 @@ set(CMAKE_EXECUTABLE_SUFFIX ".js")
 set(WASM ON
   CACHE BOOL "Compile to WebAssembly rather than plain JavaScript")
 
+option(PUZZLES_WASM_MIDEND
+  "Also build WASM modules that expose the midend API directly (for \
+front ends other than the canvas-based one in emcc.c), one per puzzle \
+plus a combined module covering every puzzle" OFF)
+
 # The emsdk itself refuses to target browsers older than some floor
 # that rises from one Emscripten release to the next (see
 # check_browser_versions() in tools/link.py, and the table it reads
@@ -107,7 +112,6 @@ macro(emscripten_set_min_version varname default_value floor_value docstring)
       "emsdk supports (${floor_value}).")
   endif()
 endmacro()
-
 if(WASM)
   emscripten_set_min_version(MIN_FIREFOX_VERSION 68
     "${EMSCRIPTEN_OLDEST_SUPPORTED_FIREFOX}"
@@ -196,7 +200,186 @@ function(set_platform_puzzle_target_properties NAME TARGET)
   em_link_js_library(${TARGET} ${PUZZLES_ROOT_DIR}/emcclib.js)
 endfunction()
 
+# Builds WASM modules that export the midend API directly, rather
+# than the canvas-based UI in emcc.c. These deliberately don't use
+# em_link_pre_js/em_link_js_library (that's how emcc.c's front end
+# gets its js_* functions resolved): the wasmmid_* functions declared
+# but not defined in wasmmidend.c are left as genuine WASM imports,
+# for any host (JS or otherwise) to supply directly. See
+# wasm-midend.md for the full contract.
+function(build_wasm_midend_targets)
+  # CMAKE_C_LINK_FLAGS (set above, for the canvas build's own targets)
+  # is read once, at generate time, as a single value shared by every
+  # C-executable target in this directory - it isn't captured
+  # per-target at add_executable() time, so there's no way to exempt
+  # our targets from it by (temporarily or otherwise) changing the
+  # variable here. Instead, override the specific canvas-build
+  # settings that don't apply to us (notably a MIN_FIREFOX_VERSION
+  # newer emcc versions reject) by repeating them in our own
+  # target_link_options(): emcc takes the last occurrence of a
+  # repeated `-s KEY=`, and ours land after CMAKE_C_LINK_FLAGS on the
+  # command line.
+  set(wasmmidend_export_list
+    # Exported directly from wasmmidend.c.
+    _wasmmid_midend_new
+    _wasmmid_preset_menu_nentries
+    _wasmmid_preset_menu_entry_title
+    _wasmmid_preset_menu_entry_id
+    _wasmmid_preset_menu_entry_submenu
+    _wasmmid_preset_menu_entry_params
+    _wasmmid_config_item_type
+    _wasmmid_config_item_name
+    _wasmmid_config_item_kw
+    _wasmmid_config_item_string_value
+    _wasmmid_config_item_set_string
+    _wasmmid_config_item_bool_value
+    _wasmmid_config_item_set_bool
+    _wasmmid_config_item_choices
+    _wasmmid_config_item_choice_selected
+    _wasmmid_config_item_set_choice
+    _wasmmid_key_label_text
+    _wasmmid_key_label_button
+    _wasmmid_game_name
+    _wasmmid_game_can_solve
+    _wasmmid_game_can_configure
+    _wasmmid_game_can_format_as_text_ever
+    _wasmmid_midend_request_id_changes
+    _wasmmid_serialise
+    _wasmmid_deserialise
+    _wasmmid_save_prefs
+    _wasmmid_load_prefs
+    _wasmmid_identify_game
+    # Exported directly from midend.c/misc.c: plain enough signatures
+    # to cross the WASM boundary as-is.
+    _midend_free
+    _midend_which_game
+    _midend_set_params
+    _midend_get_params
+    _midend_size
+    _midend_reset_tilesize
+    _midend_new_game
+    _midend_restart_game
+    _midend_stop_anim
+    _midend_process_key
+    _midend_request_keys
+    _midend_current_key_label
+    _midend_force_redraw
+    _midend_redraw
+    _midend_colours
+    _midend_freeze_timer
+    _midend_timer
+    _midend_get_presets
+    _midend_which_preset
+    _midend_wants_statusbar
+    _midend_get_config
+    _midend_set_config
+    _midend_game_id
+    _midend_get_game_id
+    _midend_get_random_seed
+    _midend_can_format_as_text_now
+    _midend_text_format
+    _midend_solve
+    _midend_status
+    _midend_can_undo
+    _midend_can_redo
+    _midend_supersede_game_desc
+    _midend_rewrite_statusbar
+    _midend_get_cursor_location
+    _midend_tilesize
+    _free_cfg
+    _free_keys
+    _preset_menu_lookup_by_id
+    # Memory management, so the host can hand us buffers and free
+    # what we return.
+    _malloc
+    _free)
+  set(wasmmidend_combined_export_list ${wasmmidend_export_list}
+    _wasmmid_game_count _wasmmid_game_at)
+
+  list(TRANSFORM wasmmidend_export_list PREPEND \")
+  list(TRANSFORM wasmmidend_export_list APPEND \")
+  string(JOIN "," wasmmidend_export_string ${wasmmidend_export_list})
+
+  list(TRANSFORM wasmmidend_combined_export_list PREPEND \")
+  list(TRANSFORM wasmmidend_combined_export_list APPEND \")
+  string(JOIN "," wasmmidend_combined_export_string
+    ${wasmmidend_combined_export_list})
+
+  # These targets don't emit any JS glue at all (STANDALONE_WASM), so
+  # the canvas build's browser-version floors and STRICT_JS don't
+  # apply to them; MIN_FIREFOX_VERSION in particular is overridden
+  # because newer Emscripten versions reject the canvas build's older
+  # floor outright. See the note above build_wasm_midend_targets() for
+  # why this is done by repeating the setting rather than by trying to
+  # exempt these targets from CMAKE_C_LINK_FLAGS.
+  # --no-entry: build a WASI reactor (exporting _initialize) rather
+  # than a command (exporting _start, which Emscripten wires up to
+  # call proc_exit() once main() returns). wasmmidend.c has no main()
+  # for exactly this reason, but STANDALONE_WASM's EXPECT_MAIN
+  # defaults to true regardless of whether a main() actually exists
+  # in the linked objects, so this flag - not the absence of main() -
+  # is what actually switches the mode.
+  set(wasmmidend_link_options
+    -sSTANDALONE_WASM=1
+    --no-entry
+    -sALLOW_MEMORY_GROWTH=1
+    -sEXPORTED_FUNCTIONS=[${wasmmidend_export_string}]
+    -sMIN_FIREFOX_VERSION=0
+    -sMIN_CHROME_VERSION=0
+    -sMIN_SAFARI_VERSION=0
+    -sERROR_ON_UNDEFINED_SYMBOLS=0)
+
+  # Two separate object libraries, not one shared between both kinds
+  # of target: wasmmidend.c's behaviour (and list.c's) differs under
+  # COMBINED, so each flavour needs its own compile of it.
+  add_library(wasmmidend_core_obj OBJECT
+    ${midend_core_sources} hat.c spectre.c wasmmidend.c)
+
+  add_library(wasmmidend_combined_core_obj OBJECT
+    ${midend_core_sources} hat.c spectre.c wasmmidend.c)
+  target_compile_definitions(wasmmidend_combined_core_obj PRIVATE COMBINED)
+  target_include_directories(wasmmidend_combined_core_obj PRIVATE
+    ${generated_include_dir})
+
+  # puzzle_names and puzzle_sources are meant to be parallel lists,
+  # but build_extras() (cmake/setup.cmake) sorts puzzle_names before
+  # calling build_platform_extras() without sorting puzzle_sources to
+  # match, so the two are not reliably in step by the time we get
+  # here. Resolve each name's source file ourselves instead of
+  # indexing into puzzle_sources.
+  foreach(name ${puzzle_names})
+    if(EXISTS ${PUZZLES_ROOT_DIR}/${name}.c)
+      set(source ${PUZZLES_ROOT_DIR}/${name}.c)
+    else()
+      set(source ${PUZZLES_ROOT_DIR}/unfinished/${name}.c)
+    endif()
+    add_executable(${name}-midend
+      $<TARGET_OBJECTS:wasmmidend_core_obj> ${source})
+    set_target_properties(${name}-midend PROPERTIES SUFFIX ".wasm")
+    target_link_options(${name}-midend PRIVATE ${wasmmidend_link_options})
+  endforeach()
+
+  add_executable(puzzles-midend
+    $<TARGET_OBJECTS:wasmmidend_combined_core_obj> list.c ${puzzle_sources})
+  target_compile_definitions(puzzles-midend PRIVATE COMBINED)
+  target_include_directories(puzzles-midend PRIVATE ${generated_include_dir})
+  set_target_properties(puzzles-midend PROPERTIES SUFFIX ".wasm")
+  target_link_options(puzzles-midend PRIVATE
+    -sSTANDALONE_WASM=1
+    --no-entry
+    -sALLOW_MEMORY_GROWTH=1
+    -sEXPORTED_FUNCTIONS=[${wasmmidend_combined_export_string}]
+    -sMIN_FIREFOX_VERSION=0
+    -sMIN_CHROME_VERSION=0
+    -sMIN_SAFARI_VERSION=0
+    -sERROR_ON_UNDEFINED_SYMBOLS=0)
+endfunction()
+
 function(build_platform_extras)
+  if(PUZZLES_WASM_MIDEND)
+    build_wasm_midend_targets()
+  endif()
+
   if(HALIBUT)
     set(help_dir ${CMAKE_CURRENT_BINARY_DIR}/help)
     add_custom_command(OUTPUT ${help_dir}/en
