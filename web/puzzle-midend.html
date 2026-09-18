@@ -13,13 +13,27 @@
     --panel: #f1f5f9; /* slate-100 */
     --border: #e2e8f0; /* slate-200 */
   }
+  /* [data-theme] on the root is set by the UI's theme selector to
+     override the browser's own light/dark preference; "system"
+     (the default) leaves it unset and falls through to the media
+     query below. */
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --fg: #f1f5f9; /* slate-100 */
       --bg: #0f172a; /* slate-900 */
       --panel: #1e293b; /* slate-800 */
       --border: #334155; /* slate-700 */
     }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --fg: #f1f5f9; /* slate-100 */
+    --bg: #0f172a; /* slate-900 */
+    --panel: #1e293b; /* slate-800 */
+    --border: #334155; /* slate-700 */
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
   }
   html, body {
     height: 100%;

@@ -114,7 +114,31 @@ function invertOklabLightness(r: number, g: number, b: number): [number, number,
 }
 
 function prefersDarkMode(): boolean {
+  const theme = document.documentElement.dataset.theme;
+  if (theme === "dark") return true;
+  if (theme === "light") return false;
   return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+/* ----------------------------------------------------------------------
+ * The UI's light/dark override (as opposed to the above, which is what
+ * actually gets rendered once the browser's own preference is folded
+ * in). "system" means "no override": document.documentElement's
+ * [data-theme] is left unset, so puzzle-midend.html's CSS falls
+ * through to its prefers-color-scheme media query.
+ */
+type ThemePreference = "system" | "light" | "dark";
+const THEME_STORAGE_KEY = "puzzle-midend-theme";
+
+function getThemePreference(): ThemePreference {
+  const stored = localStorage.getItem(THEME_STORAGE_KEY);
+  return stored === "light" || stored === "dark" ? stored : "system";
+}
+
+function setThemePreference(theme: ThemePreference): void {
+  localStorage.setItem(THEME_STORAGE_KEY, theme);
+  if (theme === "system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
 }
 
 /* ----------------------------------------------------------------------
@@ -1015,22 +1039,41 @@ export async function mountPuzzle(
 
   const wasmBytes = await getWasmBytes(wasmUrl);
 
-  if (options.gameIndex === undefined) {
-    const games = await Midend.probeGames(wasmBytes);
-    if (games) {
-      const gameSelect = document.createElement("select");
-      for (const g of games) {
-        const opt = document.createElement("option");
-        opt.value = String(g.index);
-        opt.textContent = g.name;
-        gameSelect.appendChild(opt);
-      }
-      gameSelect.addEventListener("change", () =>
-        mountPuzzle(container, wasmUrl, { ...options, gameIndex: Number(gameSelect.value) }),
-      );
-      toolbar.appendChild(gameSelect);
+  const games = await Midend.probeGames(wasmBytes);
+  if (games) {
+    const gameSelect = document.createElement("select");
+    for (const g of games) {
+      const opt = document.createElement("option");
+      opt.value = String(g.index);
+      opt.textContent = g.name;
+      gameSelect.appendChild(opt);
     }
+    gameSelect.value = String(options.gameIndex ?? 0);
+    gameSelect.addEventListener("change", () =>
+      mountPuzzle(container, wasmUrl, { ...options, gameIndex: Number(gameSelect.value) }),
+    );
+    toolbar.appendChild(gameSelect);
   }
+
+  const themeSelect = document.createElement("select");
+  themeSelect.title = "Colour theme";
+  for (const [value, label] of [
+    ["system", "Theme: match system"],
+    ["light", "Theme: light"],
+    ["dark", "Theme: dark"],
+  ] as [ThemePreference, string][]) {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    themeSelect.appendChild(opt);
+  }
+  setThemePreference(getThemePreference());
+  themeSelect.value = getThemePreference();
+  themeSelect.addEventListener("change", () => {
+    setThemePreference(themeSelect.value as ThemePreference);
+    midend.forceRedraw();
+  });
+  toolbar.appendChild(themeSelect);
 
   const presetSelect = document.createElement("select");
   toolbar.appendChild(presetSelect);
