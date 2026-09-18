@@ -801,6 +801,13 @@ export class Midend {
     return this.readCString(errPtr);
   }
 
+  /** Save this game's in-progress state to localStorage under _stateKey, if set. */
+  saveState() {
+    if (!this.me || !this._stateKey) return;
+    const bytes = this.serialise();
+    localStorage.setItem(this._stateKey, btoa(String.fromCharCode(...bytes)));
+  }
+
   destroy() {
     this.stopTimer();
     if (this.me) this.exports.midend_free(this.me);
@@ -839,6 +846,7 @@ async function getWasmBytes(url) {
  */
 export async function mountPuzzle(container, wasmUrl, options = {}) {
   if (container._puzzleMidend) {
+    container._puzzleMidend.saveState();
     container._puzzleMidend.destroy();
     if (container._puzzleMidendResizeObserver) container._puzzleMidendResizeObserver.disconnect();
     if (container._puzzleMidendThemeCleanup) container._puzzleMidendThemeCleanup();
@@ -1103,11 +1111,23 @@ export async function mountPuzzle(container, wasmUrl, options = {}) {
   if (savedPrefs) {
     midend.loadPrefs(Uint8Array.from(atob(savedPrefs), (c) => c.charCodeAt(0)));
   }
+
+  midend._stateKey = `puzzle-midend-state:${wasmUrl}:${options.gameIndex || 0}`;
+  const savedState = localStorage.getItem(midend._stateKey);
+  if (savedState) {
+    const err = midend.deserialise(Uint8Array.from(atob(savedState), (c) => c.charCodeAt(0)));
+    if (err) {
+      console.error("[puzzle] discarding unreadable saved game:", err);
+      localStorage.removeItem(midend._stateKey);
+    }
+  }
+
   if (!container._puzzleMidendUnloadHandler) {
     container._puzzleMidendUnloadHandler = true;
     window.addEventListener("beforeunload", () => {
       const current = container._puzzleMidend;
       if (!current || !current.me) return;
+      current.saveState();
       const bytes = current.savePrefs();
       localStorage.setItem(current._prefsKey, btoa(String.fromCharCode(...bytes)));
     });
