@@ -1049,7 +1049,19 @@ export async function mountPuzzle(
 
   const wasmBytes = await getWasmBytes(wasmUrl);
 
+  /* Absent an explicit gameIndex (from a caller, or a URL ?game=
+   * param), fall back to whatever game was last selected for this
+   * module, so a refresh reloads the in-progress game rather than
+   * always resetting to game 0. */
   const games = await Midend.probeGames(wasmBytes);
+  const lastGameKey = games ? `puzzle-midend-last-game:${wasmUrl}` : null;
+  let gameIndex = options.gameIndex;
+  if (gameIndex === undefined && lastGameKey) {
+    const stored = localStorage.getItem(lastGameKey);
+    if (stored !== null) gameIndex = Number(stored);
+  }
+  if (lastGameKey && gameIndex !== undefined) localStorage.setItem(lastGameKey, String(gameIndex));
+
   if (games) {
     const gameSelect = document.createElement("select");
     for (const g of games) {
@@ -1058,7 +1070,7 @@ export async function mountPuzzle(
       opt.textContent = g.name;
       gameSelect.appendChild(opt);
     }
-    gameSelect.value = String(options.gameIndex ?? 0);
+    gameSelect.value = String(gameIndex ?? 0);
     gameSelect.addEventListener("change", () =>
       mountPuzzle(container, wasmUrl, { ...options, gameIndex: Number(gameSelect.value) }),
     );
@@ -1103,6 +1115,7 @@ export async function mountPuzzle(
   let mounted = false;
   const midend = await Midend.load(wasmBytes, canvas, {
     ...options,
+    gameIndex,
     statusBar,
     onIdsChanged: () => mounted && refreshPresetSelection(),
   });
@@ -1287,13 +1300,13 @@ export async function mountPuzzle(
   toolbar.appendChild(loadInput);
   makeButton("Load...", () => loadInput.click());
 
-  midend._prefsKey = `puzzle-midend-prefs:${wasmUrl}:${options.gameIndex || 0}`;
+  midend._prefsKey = `puzzle-midend-prefs:${wasmUrl}:${gameIndex ?? 0}`;
   const savedPrefs = localStorage.getItem(midend._prefsKey);
   if (savedPrefs) {
     midend.loadPrefs(Uint8Array.from(atob(savedPrefs), (c) => c.charCodeAt(0)));
   }
 
-  midend._stateKey = `puzzle-midend-state:${wasmUrl}:${options.gameIndex || 0}`;
+  midend._stateKey = `puzzle-midend-state:${wasmUrl}:${gameIndex ?? 0}`;
   const savedState = localStorage.getItem(midend._stateKey);
   if (savedState) {
     const err = midend.deserialise(Uint8Array.from(atob(savedState), (c) => c.charCodeAt(0)));
