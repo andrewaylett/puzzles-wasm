@@ -9,7 +9,19 @@ set(WASM ON
 option(PUZZLES_WASM_MIDEND
   "Also build WASM modules that expose the midend API directly (for \
 front ends other than the canvas-based one in emcc.c), one per puzzle \
-plus a combined module covering every puzzle" OFF)
+plus a combined module covering every puzzle - and, from those, the \
+browser front end's static web pages (web/)" ON)
+
+if(PUZZLES_WASM_MIDEND)
+  find_program(TSC tsc)
+  if(NOT TSC)
+    message(FATAL_ERROR "PUZZLES_WASM_MIDEND (on by default) builds the \
+browser front end's puzzle-midend.js from puzzle-midend.ts, which needs \
+the TypeScript compiler: install one (e.g. 'npm install -g typescript') \
+and make sure 'tsc' is on PATH, or pass -DTSC=/path/to/tsc, or configure \
+with -DPUZZLES_WASM_MIDEND=OFF to skip the web front end entirely.")
+  endif()
+endif()
 
 # The emsdk itself refuses to target browsers older than some floor
 # that rises from one Emscripten release to the next (see
@@ -208,6 +220,11 @@ endfunction()
 # for any host (JS or otherwise) to supply directly. See
 # wasm-midend.md for the full contract.
 function(build_wasm_midend_targets)
+  # Per-puzzle modules land straight in the web output directory: it's
+  # the thing build_wasm_web_pages() below packages up as the
+  # ready-to-upload site, and each puzzle's page fetches
+  # "<name>-midend.wasm" next to itself.
+  set(web_output_dir ${CMAKE_BINARY_DIR}/web)
   # CMAKE_C_LINK_FLAGS (set above, for the canvas build's own targets)
   # is read once, at generate time, as a single value shared by every
   # C-executable target in this directory - it isn't captured
@@ -355,7 +372,9 @@ function(build_wasm_midend_targets)
     endif()
     add_executable(${name}-midend
       $<TARGET_OBJECTS:wasmmidend_core_obj> ${source})
-    set_target_properties(${name}-midend PROPERTIES SUFFIX ".wasm")
+    set_target_properties(${name}-midend PROPERTIES
+      SUFFIX ".wasm"
+      RUNTIME_OUTPUT_DIRECTORY ${web_output_dir})
     target_link_options(${name}-midend PRIVATE ${wasmmidend_link_options})
   endforeach()
 
@@ -373,6 +392,85 @@ function(build_wasm_midend_targets)
     -sMIN_CHROME_VERSION=0
     -sMIN_SAFARI_VERSION=0
     -sERROR_ON_UNDEFINED_SYMBOLS=0)
+endfunction()
+
+# Assembles the browser front end's static site: puzzle-midend.js
+# (compiled from puzzle-midend.ts by tsc), puzzle-midend.css, one HTML
+# page per puzzle (each fetching its own <name>-midend.wasm, built by
+# build_wasm_midend_targets() above into the same directory) and an
+# index page linking to all of them - the WASM-mid-end equivalent of
+# the classic set of per-puzzle canvas-build pages under html/. Must
+# run after build_platform_extras() has set up help_dir/HALIBUT, so
+# game pages can link to their instructions when docs are available.
+function(build_wasm_web_pages)
+  set(web_src_dir ${PUZZLES_ROOT_DIR}/web)
+  set(web_output_dir ${CMAKE_BINARY_DIR}/web)
+  file(MAKE_DIRECTORY ${web_output_dir})
+
+  add_custom_command(
+    OUTPUT ${web_output_dir}/puzzle-midend.js
+    COMMAND ${TSC} --target es2022 --module es2022
+      --outDir ${web_output_dir} ${web_src_dir}/puzzle-midend.ts
+    DEPENDS ${web_src_dir}/puzzle-midend.ts
+    COMMENT "Compiling puzzle-midend.ts (tsc)")
+
+  add_custom_command(
+    OUTPUT ${web_output_dir}/puzzle-midend.css
+    COMMAND ${CMAKE_COMMAND} -E copy
+      ${web_src_dir}/puzzle-midend.css ${web_output_dir}/puzzle-midend.css
+    DEPENDS ${web_src_dir}/puzzle-midend.css)
+
+  # Puzzles under unfinished/ (see PUZZLES_ENABLE_UNFINISHED) aren't
+  # documented in puzzles.but, so they get no "Full instructions" link
+  # and are left off the index - matching html/jspage.pl's treatment
+  # of the same puzzles for the canvas build.
+  set(page_args)
+  set(page_outputs ${web_output_dir}/index.html)
+  foreach(name ${puzzle_names})
+    if(EXISTS ${PUZZLES_ROOT_DIR}/${name}.c)
+      set(unfinished 0)
+    else()
+      set(unfinished 1)
+    endif()
+    list(APPEND page_args
+      ${name} "${displayname_${name}}" "${description_${name}}" ${unfinished})
+    list(APPEND page_outputs ${web_output_dir}/${name}.html)
+  endforeach()
+
+  if(HALIBUT)
+    set(has_help 1)
+  else()
+    set(has_help 0)
+  endif()
+
+  add_custom_command(
+    OUTPUT ${page_outputs}
+    COMMAND ${web_src_dir}/genpages.pl
+      ${web_output_dir} ${has_help} ${page_args}
+    DEPENDS ${web_src_dir}/genpages.pl ${PUZZLES_ROOT_DIR}/CMakeLists.txt
+    VERBATIM
+    COMMENT "Generating puzzle web pages")
+
+  add_custom_target(puzzles-web ALL
+    DEPENDS
+      ${web_output_dir}/puzzle-midend.js
+      ${web_output_dir}/puzzle-midend.css
+      ${page_outputs})
+
+  foreach(name ${puzzle_names})
+    add_dependencies(puzzles-web ${name}-midend)
+  endforeach()
+
+  if(HALIBUT)
+    # help_dir/en is populated by the kaios_help target above; copy it
+    # into the web output so the generated pages' "Full instructions"
+    # links resolve without reaching outside the upload directory.
+    add_dependencies(puzzles-web kaios_help)
+    add_custom_command(TARGET puzzles-web POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${help_dir}/en ${web_output_dir}/help
+      COMMENT "Copying puzzle documentation into the web output")
+  endif()
 endfunction()
 
 function(build_platform_extras)
@@ -444,4 +542,8 @@ function(build_platform_extras)
       DESTINATION kaios/${name})
 
   endforeach()
+
+  if(PUZZLES_WASM_MIDEND)
+    build_wasm_web_pages()
+  endif()
 endfunction()

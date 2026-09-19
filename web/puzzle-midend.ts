@@ -1276,7 +1276,7 @@ export async function mountPuzzle(
   makeButton("Preferences...", () => openConfigDialog(ConfigWhich.PREFS));
   makeButton("Save", () => {
     const bytes = midend.serialise();
-    const blob = new Blob([bytes], { type: "application/octet-stream" });
+    const blob = new Blob([new Uint8Array(bytes)], { type: "application/octet-stream" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "puzzle.sav";

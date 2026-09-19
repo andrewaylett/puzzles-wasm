@@ -1,0 +1,161 @@
+/* Shared styling for the WASM mid-end browser front end: the demo
+ * shell (toolbar, canvas, status bar, dialogs) plus the light/dark
+ * theming that puzzle-midend.ts's theme selector and
+ * wasmmid_default_colour rely on. Shared by every generated puzzle
+ * page and the index, so it only needs loading once per page. */
+:root {
+  color-scheme: light dark;
+  /* Tailwind's slate scale: https://tailwindcss.com/docs/colors */
+  --fg: #0f172a; /* slate-900 */
+  --bg: #f8fafc; /* slate-50 */
+  --panel: #f1f5f9; /* slate-100 */
+  --border: #e2e8f0; /* slate-200 */
+}
+/* [data-theme] on the root is set by the UI's theme selector to
+   override the browser's own light/dark preference; "system"
+   (the default) leaves it unset and falls through to the media
+   query below. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --fg: #f1f5f9; /* slate-100 */
+    --bg: #0f172a; /* slate-900 */
+    --panel: #1e293b; /* slate-800 */
+    --border: #334155; /* slate-700 */
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --fg: #f1f5f9; /* slate-100 */
+  --bg: #0f172a; /* slate-900 */
+  --panel: #1e293b; /* slate-800 */
+  --border: #334155; /* slate-700 */
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+html, body {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+header {
+  padding: 0.5em 1em;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25em 1em;
+}
+header h1 {
+  font-size: 1.1em;
+  margin: 0;
+}
+header nav a {
+  color: inherit;
+}
+#puzzle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.puzzle-midend-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  padding: 0.5em;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.puzzle-midend-canvas-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  overflow: hidden;
+}
+.puzzle-midend-canvas-wrap canvas {
+  outline: none;
+  /* wasmmid_default_colour reads this via getComputedStyle to pick
+     the puzzle's background colour, so it must be opaque - an
+     unset (transparent) background reads back as black. */
+  background: var(--bg);
+}
+.puzzle-midend-statusbar {
+  padding: 0.25em 0.5em;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  font-family: monospace;
+}
+.puzzle-midend-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.puzzle-midend-dialog {
+  background: var(--panel);
+  color: var(--fg);
+  border-radius: 6px;
+  padding: 1em;
+  min-width: 20em;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+}
+.puzzle-midend-dialog h3 {
+  margin-top: 0;
+}
+.puzzle-midend-dialog-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1em;
+  margin: 0.5em 0;
+}
+.puzzle-midend-dialog-error {
+  color: #c0392b;
+  min-height: 1.2em;
+}
+.puzzle-midend-dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5em;
+  margin-top: 1em;
+}
+
+/* Index page only. */
+.puzzle-index-list {
+  list-style: none;
+  margin: 0;
+  padding: 1em;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14em, 1fr));
+  gap: 1em;
+}
+.puzzle-index-list li {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75em 1em;
+  background: var(--panel);
+}
+.puzzle-index-list a {
+  color: inherit;
+  font-weight: bold;
+  text-decoration: none;
+}
+.puzzle-index-list a:hover {
+  text-decoration: underline;
+}
+.puzzle-index-list p {
+  margin: 0.25em 0 0;
+  font-size: 0.9em;
+}
+</content>
