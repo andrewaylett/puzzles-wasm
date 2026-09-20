@@ -1,3 +1,12 @@
+# Keep the build directory out of version control, without clobbering
+# a .gitignore that the user (or something else) has put there deliberately.
+if(NOT EXISTS "${CMAKE_BINARY_DIR}/.gitignore")
+  file(WRITE "${CMAKE_BINARY_DIR}/.gitignore"
+    "# Written by CMake because this looks like a build directory.\n"
+    "# Delete this file if you don't want it ignored.\n"
+    "*\n")
+endif()
+
 set(PUZZLES_ENABLE_UNFINISHED ""
   CACHE STRING "List of puzzles in the 'unfinished' subdirectory \
 to build as if official (separated by ';')")
