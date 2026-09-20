@@ -6,21 +6,122 @@ set(CMAKE_EXECUTABLE_SUFFIX ".js")
 set(WASM ON
   CACHE BOOL "Compile to WebAssembly rather than plain JavaScript")
 
-# The minimal versions here are the ones that Puzzles' own JavaScript
-# is written for. For most browsers, that's the earliest version whose
-# WASM Emscripten is still willing to target (as of Emscripten
-# 3.1.54). For Firefox _without_ WASM, we go back to Firefox 48
-# because that's what KaiOS 2.5 is based on.
+# The emsdk itself refuses to target browsers older than some floor
+# that rises from one Emscripten release to the next (see
+# check_browser_versions() in tools/link.py, and the table it reads
+# in tools/feature_matrix.py). We used to just hard-code numbers that
+# were correct for whichever Emscripten happened to be installed when
+# this file was last edited, but that breaks as soon as a newer emsdk
+# raises its floor above one of them - which has already happened for
+# Firefox. So instead, ask the installed emsdk what its floor actually
+# is, and use that both to pick sensible minimums and to work out
+# whether the emsdk can still target old enough a Firefox to support
+# KaiOS (whose browser is based on Firefox 48) at all.
+#
+# We find each floor by deliberately asking emcc to target something
+# absurdly old and reading the version number out of the "older than
+# NN is not supported" diagnostic it prints - that's the same check
+# the real build is subject to, so it can't go stale independently of
+# the emsdk itself.
+function(emscripten_probe_oldest_supported ff cr sf setting_name outvar)
+  set(probe_src "${CMAKE_BINARY_DIR}/CMakeFiles/emcc-min-browser-probe.c")
+  if(NOT EXISTS "${probe_src}")
+    file(WRITE "${probe_src}" "int main(void) { return 0; }\n")
+  endif()
+
+  execute_process(
+    COMMAND "${CMAKE_C_COMPILER}" "${probe_src}"
+      -o "${CMAKE_BINARY_DIR}/CMakeFiles/emcc-min-browser-probe.js"
+      -s ENVIRONMENT=web
+      -s MIN_NODE_VERSION=0
+      -s MIN_FIREFOX_VERSION=${ff}
+      -s MIN_CHROME_VERSION=${cr}
+      -s MIN_SAFARI_VERSION=${sf}
+    RESULT_VARIABLE probe_result
+    OUTPUT_VARIABLE probe_stdout
+    ERROR_VARIABLE probe_stderr)
+  set(probe_text "${probe_stdout}${probe_stderr}")
+
+  if(probe_text MATCHES "${setting_name} older than ([0-9]+) is not supported")
+    set(${outvar} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+  else()
+    message(WARNING "Couldn't work out the oldest browser version this "
+      "emsdk still accepts for ${setting_name} (expected emcc to reject "
+      "an absurdly low value and name its actual floor; it didn't). "
+      "Falling back to Puzzles' own hard-coded default for it, which "
+      "may be stale. emcc said:\n${probe_text}")
+    set(${outvar} "" PARENT_SCOPE)
+  endif()
+endfunction()
+
+# Only re-run the (fairly slow) probes when the emsdk itself has
+# changed, e.g. because it's been upgraded in place without wiping out
+# this build directory.
+execute_process(COMMAND "${CMAKE_C_COMPILER}" --version
+  OUTPUT_VARIABLE emcc_version_text ERROR_QUIET)
+string(REGEX MATCH "[^\n]+" emcc_version_line "${emcc_version_text}")
+
+if(NOT DEFINED CACHE{EMSCRIPTEN_BROWSER_FLOOR_STAMP} OR
+    NOT EMSCRIPTEN_BROWSER_FLOOR_STAMP STREQUAL emcc_version_line)
+  emscripten_probe_oldest_supported(1 0 0 MIN_FIREFOX_VERSION oldest_firefox)
+  emscripten_probe_oldest_supported(0 1 0 MIN_CHROME_VERSION oldest_chrome)
+  emscripten_probe_oldest_supported(0 0 1 MIN_SAFARI_VERSION oldest_safari)
+  set(EMSCRIPTEN_OLDEST_SUPPORTED_FIREFOX "${oldest_firefox}" CACHE INTERNAL
+    "Oldest Firefox version the installed emsdk is willing to target")
+  set(EMSCRIPTEN_OLDEST_SUPPORTED_CHROME "${oldest_chrome}" CACHE INTERNAL
+    "Oldest Chrome version the installed emsdk is willing to target")
+  set(EMSCRIPTEN_OLDEST_SUPPORTED_SAFARI "${oldest_safari}" CACHE INTERNAL
+    "Oldest Safari version the installed emsdk is willing to target")
+  set(EMSCRIPTEN_BROWSER_FLOOR_STAMP "${emcc_version_line}" CACHE INTERNAL
+    "emcc --version output the above floors were probed from")
+endif()
+
+# KaiOS 2.5's browser is based on Firefox 48. If the installed emsdk's
+# floor has risen above that, it's no longer able to produce a
+# genuinely KaiOS-compatible build at all (asking for
+# MIN_FIREFOX_VERSION=0 would link, but that just disables emcc's own
+# feature gating rather than actually asserting Firefox 48
+# compatibility, so it isn't a substitute).
+if(NOT WASM AND NOT EMSCRIPTEN_OLDEST_SUPPORTED_FIREFOX STREQUAL "" AND
+    EMSCRIPTEN_OLDEST_SUPPORTED_FIREFOX GREATER 48)
+  message(FATAL_ERROR "This emsdk (${EMSCRIPTEN_BROWSER_FLOOR_STAMP}) "
+    "can't target anything older than Firefox "
+    "${EMSCRIPTEN_OLDEST_SUPPORTED_FIREFOX}, which is newer than the "
+    "Firefox 48 that KaiOS 2.5 is based on, so it can't build a "
+    "KaiOS-compatible target. Try an older emsdk, or configure with "
+    "-DWASM=ON if you just want the ordinary web build.")
+endif()
+
+# Pick each minimum as the more restrictive of what Puzzles' own
+# JavaScript wants and what this emsdk will still let us ask for, and
+# refuse to configure if a version forced on the command line
+# (-DMIN_..._VERSION=) is one the emsdk won't accept.
+macro(emscripten_set_min_version varname default_value floor_value docstring)
+  set(effective_default ${default_value})
+  if(NOT "${floor_value}" STREQUAL "" AND "${floor_value}" GREATER effective_default)
+    set(effective_default ${floor_value})
+  endif()
+  set(${varname} ${effective_default} CACHE STRING "${docstring}")
+  if(NOT "${floor_value}" STREQUAL "" AND ${varname} LESS "${floor_value}")
+    message(FATAL_ERROR "${varname}=${${varname}} is older than this "
+      "emsdk supports (${floor_value}).")
+  endif()
+endmacro()
+
 if(WASM)
-  set(MIN_FIREFOX_VERSION 68 CACHE STRING
+  emscripten_set_min_version(MIN_FIREFOX_VERSION 68
+    "${EMSCRIPTEN_OLDEST_SUPPORTED_FIREFOX}"
     "Oldest major version of Firefox to target")
 else()
-  set(MIN_FIREFOX_VERSION 48 CACHE STRING
+  emscripten_set_min_version(MIN_FIREFOX_VERSION 48
+    "${EMSCRIPTEN_OLDEST_SUPPORTED_FIREFOX}"
     "Oldest major version of Firefox to target")
 endif()
-set(MIN_SAFARI_VERSION 150000 CACHE STRING
+emscripten_set_min_version(MIN_SAFARI_VERSION 150000
+  "${EMSCRIPTEN_OLDEST_SUPPORTED_SAFARI}"
   "Oldest version of desktop Safari to target (XXYYZZ for version XX.YY.ZZ)")
-set(MIN_CHROME_VERSION 57 CACHE STRING
+emscripten_set_min_version(MIN_CHROME_VERSION 57
+  "${EMSCRIPTEN_OLDEST_SUPPORTED_CHROME}"
   "Oldest version of Chrome to target")
 
 find_program(HALIBUT halibut)
