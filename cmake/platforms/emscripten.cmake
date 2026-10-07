@@ -12,6 +12,22 @@ front ends other than the canvas-based one in emcc.c), one per puzzle \
 plus a combined module covering every puzzle - and, from those, the \
 browser front end's static web pages (web/)" ON)
 
+option(PUZZLES_WASM_MINSIZE
+  "Optimise every WASM/JS target for size (-Oz with link-time \
+optimisation) rather than speed. The puzzles are not compute-bound, so \
+this trades a little speed for a markedly smaller download (the combined \
+midend module shrinks by roughly 30% against a plain Release build). \
+LTO needs LTO builds of Emscripten's system libraries, which emcc \
+builds on demand into its cache; if the emsdk's cache isn't writable, \
+point EM_CACHE at a directory that is." OFF)
+
+if(PUZZLES_WASM_MINSIZE)
+  # Both compile and link: with -flto the real optimisation happens at
+  # link time, and the link step also needs -Oz for wasm-opt's passes.
+  add_compile_options(-Oz -flto)
+  add_link_options(-Oz -flto)
+endif()
+
 if(PUZZLES_WASM_MIDEND)
   find_program(TSC tsc)
   if(NOT TSC)

@@ -37,6 +37,15 @@ building only the KaiOS canvas pages), configure with
 `-DPUZZLES_WASM_MIDEND=OFF` to skip both the WASM mid-end modules and this
 requirement.
 
+For the smallest download, add `-DPUZZLES_WASM_MINSIZE=ON` (and
+`-DCMAKE_BUILD_TYPE=MinSizeRel`). This compiles everything with `-Oz` and
+link-time optimisation, which cuts the combined `puzzles-midend.wasm` by
+roughly 30% compared with a plain `Release` build. The puzzles aren't
+compute-bound, so the lost speed is not noticeable. LTO needs
+LTO-flavoured Emscripten system libraries, which emcc builds on first use
+into its cache; if the emsdk's cache directory isn't writable by you,
+set `EM_CACHE` to one that is.
+
 The result is `cmake-build-wasm/web/`: `index.html`, one `<name>.html` plus
 `<name>-midend.wasm` per puzzle, the shared `puzzle-midend.js`/`.css`, and
 (when `halibut` was found, so the built-in documentation could be built)
