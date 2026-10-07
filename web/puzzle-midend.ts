@@ -47,6 +47,7 @@ export const Button = {
   UI_NEWGAME: 0x0211,
   UI_UNDO: 0x0213,
   UI_REDO: 0x0214,
+  MOD_STYLUS: 0x0800,
   MOD_CTRL: 0x1000,
   MOD_SHFT: 0x2000,
   MOD_NUM_KEYPAD: 0x4000,
@@ -749,7 +750,14 @@ export class Midend {
     };
   }
 
+  /* A pen has no secondary button to speak of, so games with
+   * STYLUS_SUPPORT are told (via MOD_STYLUS) to offer an alternative. */
   pointerButton(event: PointerEvent, phase: "down" | "drag" | "up"): number {
+    const stylus = event.pointerType === "pen" ? Button.MOD_STYLUS : 0;
+    return stylus | this.pointerButtonBase(event, phase);
+  }
+
+  private pointerButtonBase(event: PointerEvent, phase: "down" | "drag" | "up"): number {
     if (phase === "drag") {
       const buttons = event.buttons;
       return buttons & 2 ? Button.MIDDLE_DRAG : buttons & 4 ? Button.RIGHT_DRAG : Button.LEFT_DRAG;

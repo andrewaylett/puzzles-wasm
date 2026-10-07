@@ -55,6 +55,10 @@ running afterwards: that's the whole point of not having a `main()`.
   `LEFT_BUTTON`/`CURSOR_*`/`MOD_*` etc. button constants a front end must
   translate its own input events into; these are unchanged from the rest of
   Puzzles and not duplicated here.
+  A front end that knows the pointer is a stylus may OR in `MOD_STYLUS` on
+  mouse-down events; games with `STYLUS_SUPPORT` (e.g. Palisade, where a tap
+  then cycles an edge through wall / no wall / unknown) use it to cope
+  without a right button, and other games ignore it.
 - `midend_force_redraw`, `midend_redraw`, `midend_timer(me, float tplus)`,
   `midend_freeze_timer`
 - `midend_colours(me, int *ncolours)` → `float *`, RGB triples, `ncolours*3`

@@ -53,6 +53,12 @@ and open `http://localhost:8000/`. Opening a page directly (`file://`)
 will not work: browsers block `fetch()` of local files from a `file://`
 page, and this library fetches each `.wasm` rather than inlining it.
 
+## Stylus input
+
+Pointer events with `pointerType === "pen"` are sent with `MOD_STYLUS`, so
+games that declare `STYLUS_SUPPORT` (currently Palisade, Loopy and Light Up)
+can offer a one-button alternative to right-click.
+
 ## Using the library directly
 
 For a custom UI (not the generated pages above), `mountPuzzle(container,

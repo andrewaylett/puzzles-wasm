@@ -958,6 +958,7 @@ static char *interpret_move(const game_state *state, game_ui *ui,
 {
     int w = state->shared->params.w, h = state->shared->params.h;
     bool control = button & MOD_CTRL, shift = button & MOD_SHFT;
+    bool stylus = button & MOD_STYLUS;
 
     button = STRIP_BUTTON_MODIFIERS(button);
 
@@ -989,6 +990,25 @@ static char *interpret_move(const game_state *state, game_ui *ui,
         ui->show = false;
 
         i = gy * w + gx;
+        /*
+         * A stylus has no right button, so a (left) tap cycles the edge
+         * through unknown -> wall -> no wall -> unknown instead.  Both
+         * flags are XORed in one go to go straight from wall to no wall.
+         */
+        if (stylus && button == LEFT_BUTTON) {
+            borderflag cur = state->borders[i];
+            borderflag wall = BORDER(dir), off = DISABLED(BORDER(dir));
+            borderflag nwall = BORDER(FLIP(dir)), noff = DISABLED(BORDER(FLIP(dir)));
+            if (cur & wall)
+                return string(80, "F%d,%d,%dF%d,%d,%d",
+                              gx, gy, wall | off, hx, hy, nwall | noff);
+            if (cur & off)
+                return string(80, "F%d,%d,%dF%d,%d,%d",
+                              gx, gy, off, hx, hy, noff);
+            return string(80, "F%d,%d,%dF%d,%d,%d",
+                          gx, gy, wall, hx, hy, nwall);
+        }
+
         switch ((button == RIGHT_BUTTON) |
                 ((state->borders[i] & BORDER(dir)) >> dir << 1) |
                 ((state->borders[i] & DISABLED(BORDER(dir))) >> dir >> 2)) {
@@ -1577,5 +1597,5 @@ const struct game thegame = {
     true, false, game_print_size, game_print,
     true,                                     /* wants_statusbar */
     false, NULL,                       /* timing_state */
-    REQUIRE_RBUTTON,                           /* flags */
+    REQUIRE_RBUTTON | STYLUS_SUPPORT,          /* flags */
 };
